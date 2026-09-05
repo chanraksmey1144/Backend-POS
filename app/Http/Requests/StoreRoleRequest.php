@@ -4,7 +4,7 @@ namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
 
-class StoreWarehouseRequest extends FormRequest
+class StoreRoleRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
@@ -22,11 +22,12 @@ class StoreWarehouseRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'branch_id' => ['required', 'integer', 'exists:branches,id'],
-            'name'      => ['required', 'string', 'max:255'],
-            'code'      => ['required', 'string', 'max:50', 'unique:warehouses,code'],
-            'address'   => ['nullable', 'string', 'max:255'],
-            'status'    => ['nullable', 'string', 'max:20', 'in:active,inactive'],
+            
+            'key'         => ['required', 'string', 'max:50', 'alpha_dash', 'unique:roles,key'],
+            'name'        => ['required', 'string', 'max:100'],
+            'description' => ['nullable', 'string', 'max:255'],
+            'grant_all'   => ['nullable', 'boolean'],
+
         ];
     }
 }

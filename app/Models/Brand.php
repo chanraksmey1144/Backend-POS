@@ -4,28 +4,24 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
-class Warehouse extends Model
+class Brand extends Model
 {
     use HasFactory;
 
         protected $fillable = [
-        'branch_id',
         'name',
         'code',
-        'address',
         'status',
     ];
     protected $casts = [
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
-    /**
-     * Get the branch that owns the warehouse.
-     */
-    public function branch(): BelongsTo
+
+    public function products(): HasMany
     {
-        return $this->belongsTo(Branch::class);
+        return $this->hasMany(Product::class);
     }
 }

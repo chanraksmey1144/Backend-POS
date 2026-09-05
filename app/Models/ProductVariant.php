@@ -6,26 +6,29 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-class Warehouse extends Model
+class ProductVariant extends Model
 {
     use HasFactory;
 
         protected $fillable = [
-        'branch_id',
+        'product_id',
         'name',
-        'code',
-        'address',
-        'status',
+        'sku',
+        'barcode',
+        'cost',
+        'price',
+        'stock',
     ];
     protected $casts = [
+        'cost'       => 'float',
+        'price'      => 'float',
+        'stock'      => 'float',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
-    /**
-     * Get the branch that owns the warehouse.
-     */
-    public function branch(): BelongsTo
+    public function product(): BelongsTo
     {
-        return $this->belongsTo(Branch::class);
+        return $this->belongsTo(Product::class);
     }
+
 }

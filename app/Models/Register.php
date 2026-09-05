@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-class Warehouse extends Model
+class Register extends Model
 {
     use HasFactory;
 
@@ -14,7 +14,6 @@ class Warehouse extends Model
         'branch_id',
         'name',
         'code',
-        'address',
         'status',
     ];
     protected $casts = [
@@ -22,7 +21,7 @@ class Warehouse extends Model
         'updated_at' => 'datetime',
     ];
     /**
-     * Get the branch that owns the warehouse.
+     * Get the branch that owns the register.
      */
     public function branch(): BelongsTo
     {

@@ -14,6 +14,16 @@ class WarehouseResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
-        return parent::toArray($request);
+        return [
+            'id'         => $this->id,
+            'branch_id'  => $this->branch_id,
+            'branch'     => new BranchResource($this->whenLoaded('branch')),
+            'name'       => $this->name,
+            'code'       => $this->code,
+            'address'    => $this->address,
+            'status'     => $this->status,
+            'created_at' => $this->created_at?->toIso8601String(),
+            'updated_at' => $this->updated_at?->toIso8601String(),
+        ];
     }
 }

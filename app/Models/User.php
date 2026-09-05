@@ -4,6 +4,7 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
@@ -12,33 +13,48 @@ class User extends Authenticatable
 {
     use HasApiTokens, HasFactory, Notifiable;
 
-    /**
-     * The attributes that are mass assignable.
-     *
-     * @var array<int, string>
-     */
     protected $fillable = [
+        'role_id',
+        'branch_id',
         'name',
         'email',
-        'password',
+        'phone',
+        'password_hash',
+        'avatar',
+        'status',
+        'last_login_at',
+        'must_change_password',
     ];
-
     /**
      * The attributes that should be hidden for serialization.
-     *
-     * @var array<int, string>
      */
     protected $hidden = [
-        'password',
+        'password_hash',
         'remember_token',
     ];
 
     /**
      * The attributes that should be cast.
-     *
-     * @var array<string, string>
      */
     protected $casts = [
-        'email_verified_at' => 'datetime',
+        'password_hash'        => 'hashed',
+        'must_change_password' => 'boolean',
+        'last_login_at'        => 'datetime',
+        'created_at'           => 'datetime',
+        'updated_at'           => 'datetime',
     ];
+    /**
+     * Get the role of the user.
+     */
+    public function role(): BelongsTo
+    {
+        return $this->belongsTo(Role::class);
+    }
+    /**
+     * Get the branch assigned to the user.
+     */
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class);
+    }
 }

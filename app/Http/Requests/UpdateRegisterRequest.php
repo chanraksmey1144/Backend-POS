@@ -5,7 +5,7 @@ namespace App\Http\Requests;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
-class UpdateWarehouseRequest extends FormRequest
+class UpdateRegisterRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
@@ -22,9 +22,9 @@ class UpdateWarehouseRequest extends FormRequest
      */
     public function rules(): array
     {
-        $warehouseId = $this->route('warehouse') instanceof \App\Models\Warehouse
-            ? $this->route('warehouse')->id
-            : $this->route('warehouse');
+        $registerId = $this->route('register') instanceof \App\Models\Register
+            ? $this->route('register')->id
+            : $this->route('register');
         return [
             'branch_id' => ['sometimes', 'required', 'integer', 'exists:branches,id'],
             'name'      => ['sometimes', 'required', 'string', 'max:255'],
@@ -33,9 +33,8 @@ class UpdateWarehouseRequest extends FormRequest
                 'required',
                 'string',
                 'max:50',
-                Rule::unique('warehouses', 'code')->ignore($warehouseId),
+                Rule::unique('registers', 'code')->ignore($registerId),
             ],
-            'address'   => ['nullable', 'string', 'max:255'],
             'status'    => ['sometimes', 'required', 'string', 'max:20', 'in:active,inactive'],
         ];
     }
