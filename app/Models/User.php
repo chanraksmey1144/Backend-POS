@@ -46,6 +46,10 @@ class User extends Authenticatable
     /**
      * Get the role of the user.
      */
+    public function getAuthPassword(): string
+    {
+        return $this->password_hash;
+    }
     public function role(): BelongsTo
     {
         return $this->belongsTo(Role::class);
