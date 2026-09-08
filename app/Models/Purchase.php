@@ -5,12 +5,13 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Purchase extends Model
 {
     use HasFactory;
 
-        protected $fillable = [
+    protected $fillable = [
         'purchase_number',
         'supplier_id',
         'branch_id',
@@ -28,7 +29,7 @@ class Purchase extends Model
         'created_by',
     ];
 
-        protected $casts = [
+    protected $casts = [
         'order_date'     => 'datetime',
         'expected_date'  => 'datetime',
         'received_at'    => 'datetime',
@@ -54,7 +55,6 @@ class Purchase extends Model
                 $purchase->order_date = now();
             }
         });
-
     }
     public function supplier(): BelongsTo
     {
@@ -71,5 +71,9 @@ class Purchase extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+    public function items(): HasMany
+    {
+        return $this->hasMany(PurchaseItem::class);
     }
 }

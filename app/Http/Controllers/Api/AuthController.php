@@ -8,81 +8,65 @@ use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
+use Nette\Schema\ValidationException;
 
 class AuthController extends Controller
 {
-    /**
-     * Authenticate the user and return a Sanctum token.
+   /**
+     * Authenticate user & issue Sanctum Bearer token.
      */
     public function login(Request $request): JsonResponse
     {
-        $credentials = $request->validate([
-            'email'    => ['required', 'string', 'email'],
+        $request->validate([
+            'email'    => ['required', 'email'],
             'password' => ['required', 'string'],
         ]);
-
-        if (!Auth::attempt($credentials)) {
+        $user = User::with(['role', 'branch'])->where('email', $request->email)->first();
+        // Check password against password_hash column
+        if (!$user || !Hash::check($request->password, $user->password_hash)) {
             return response()->json([
-                'message' => 'Invalid email or password.',
+                'message' => 'The provided credentials do not match our records.',
+                'errors'  => [
+                    'email' => ['The provided credentials do not match our records.'],
+                ],
             ], 401);
         }
-
-        /** @var User $user */
-        $user = Auth::user();
-
+        // Check if user account is active
         if ($user->status !== 'active') {
-            Auth::logout();
             return response()->json([
-                'message' => 'Your account is inactive. Please contact an administrator.',
+                'message' => 'Your account is inactive. Please contact administrator.',
             ], 403);
         }
-
-        $user->load(['role', 'branch']);
+        // Update last login timestamp
         $user->update(['last_login_at' => now()]);
-
-        $role = $user->role;
-        $permissions = $role?->grant_all
-            ? ['*']
-            : ($role?->permissions()->pluck('permission')->values()->all() ?? []);
-
+        // Create Sanctum personal access token
+        $token = $user->createToken('pos-api-token')->plainTextToken;
         return response()->json([
-            'message'     => 'Login successful.',
-            'user'        => new UserResource($user),
-            'token'       => $user->createToken('pos-token')->plainTextToken,
-            'role'        => $role?->key,
-            'permissions' => $permissions,
-        ]);
+            'message'      => 'Login successful.',
+            'access_token' => $token,
+            'token_type'   => 'Bearer',
+            'user'         => new UserResource($user),
+        ], 200);
     }
-
     /**
-     * Return the currently authenticated user.
+     * Get the authenticated user details.
      */
     public function me(Request $request): JsonResponse
     {
-        /** @var User $user */
         $user = $request->user()->load(['role', 'branch']);
-
-        $role = $user->role;
-        $permissions = $role?->grant_all
-            ? ['*']
-            : ($role?->permissions()->pluck('permission')->values()->all() ?? []);
-
         return response()->json([
-            'user'        => new UserResource($user),
-            'role'        => $role?->key,
-            'permissions' => $permissions,
-        ]);
+            'user' => new UserResource($user),
+        ], 200);
     }
-
     /**
-     * Revoke the current token.
+     * Revoke the current access token (Logout).
      */
     public function logout(Request $request): JsonResponse
     {
         $request->user()->currentAccessToken()->delete();
-
         return response()->json([
             'message' => 'Logged out successfully.',
-        ]);
+        ], 200);
     }
 }

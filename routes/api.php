@@ -3,13 +3,16 @@
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BranchController;
 use App\Http\Controllers\Api\BrandController;
+use App\Http\Controllers\Api\CashRegisterSessionController;
 use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\CustomerGroupController;
+use App\Http\Controllers\Api\ExpenseController;
 use App\Http\Controllers\Api\HeldSaleController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\ProductVariantController;
 use App\Http\Controllers\Api\PurchaseController;
+use App\Http\Controllers\Api\PurchaseItemController;
 use App\Http\Controllers\Api\RegisterController;
 use App\Http\Controllers\Api\ReturnController;
 use App\Http\Controllers\Api\ReturnItemController;
@@ -17,7 +20,10 @@ use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\RolePermissionController;
 use App\Http\Controllers\Api\SaleController;
 use App\Http\Controllers\Api\SaleItemController;
+use App\Http\Controllers\Api\StockMovementController;
+use App\Http\Controllers\Api\StockTransferController;
 use App\Http\Controllers\Api\SupplierController;
+use App\Http\Controllers\Api\TransferItemController;
 use App\Http\Controllers\Api\UnitController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WarehouseController;
@@ -108,13 +114,18 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('held-sales', HeldSaleController::class);
     Route::apiResource('returns', ReturnController::class);
     Route::apiResource('return-items', ReturnItemController::class);
+    Route::apiResource('transfer-items', TransferItemController::class);
 
     // -----------------------------------------------------------------------
     // Procurement
     // -----------------------------------------------------------------------
 
     Route::apiResource('purchases', PurchaseController::class);
-
+    Route::apiResource('purchase-items', PurchaseItemController::class);
+    Route::apiResource('stock-movements', StockMovementController::class)->only(['index', 'store', 'show']);
+    Route::apiResource('stock-transfers', StockTransferController::class);
+    Route::apiResource('expenses', ExpenseController::class);
+    Route::apiResource('cash-register-sessions', CashRegisterSessionController::class);
     // -----------------------------------------------------------------------
     // Fallback (returns JSON for unknown API endpoints)
     // -----------------------------------------------------------------------

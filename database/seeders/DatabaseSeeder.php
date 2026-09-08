@@ -68,7 +68,10 @@ class DatabaseSeeder extends Seeder
                 'status'        => 'active',
             ]
         );
-        // 5. Customer Group #1 & Customer #1
+        // 5. Admin User #1 (admin@pos.com)
+        $this->call(AdminUserSeeder::class);
+
+        // 6. Customer Group #1 & Customer #1
         $group = CustomerGroup::firstOrCreate(
             ['id' => 1],
             ['name' => 'VIP Members', 'discount_percent' => 10.00]

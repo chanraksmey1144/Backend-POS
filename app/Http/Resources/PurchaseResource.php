@@ -37,6 +37,8 @@ class PurchaseResource extends JsonResource
             'creator'         => new UserResource($this->whenLoaded('creator')),
             'created_at'      => $this->created_at?->toIso8601String(),
             'updated_at'      => $this->updated_at?->toIso8601String(),
+
+            'items' => PurchaseItemResource::collection($this->whenLoaded('items')),
         ];
     }
 }
