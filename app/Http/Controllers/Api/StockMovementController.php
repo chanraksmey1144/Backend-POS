@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreStockMovementRequest;
 use App\Http\Resources\StockMovementResource;
 use App\Models\Product;
+use App\Models\ProductVariant;
 use App\Models\StockMovement;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -40,6 +41,13 @@ class StockMovementController extends Controller
                   ->orWhere('note', 'like', "%{$search}%");
             });
         }
+        // Date range filter
+        if ($request->filled('from_date')) {
+            $query->whereDate('movement_date', '>=', $request->query('from_date'));
+        }
+        if ($request->filled('to_date')) {
+            $query->whereDate('movement_date', '<=', $request->query('to_date'));
+        }
         $movements = $query->latest('movement_date')->paginate($request->integer('per_page', 20));
         return StockMovementResource::collection($movements);
     }
@@ -50,17 +58,21 @@ class StockMovementController extends Controller
     {
         $movement = DB::transaction(function () use ($request) {
             $data = $request->validated();
-            $product = Product::lockForUpdate()->findOrFail($data['product_id']);
+
+            $model = !empty($data['variant_id'])
+                ? ProductVariant::lockForUpdate()->findOrFail($data['variant_id'])
+                : Product::lockForUpdate()->findOrFail($data['product_id']);
+
             // Auto-calculate before_stock and after_stock if not provided
             if (!isset($data['before_stock'])) {
-                $data['before_stock'] = (float) $product->stock;
+                $data['before_stock'] = (float) $model->stock;
             }
             if (!isset($data['after_stock'])) {
                 $data['after_stock'] = (float) ($data['before_stock'] + $data['quantity']);
             }
-            // Update product stock level in database
-            if ($product->track_inventory) {
-                $product->update(['stock' => $data['after_stock']]);
+            // Update stock level in database
+            if (($model->track_inventory ?? true) && $data['after_stock'] >= 0) {
+                $model->update(['stock' => $data['after_stock']]);
             }
             // Create movement record
             return StockMovement::create($data);

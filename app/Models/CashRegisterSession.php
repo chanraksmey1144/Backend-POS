@@ -5,12 +5,13 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class CashRegisterSession extends Model
 {
     use HasFactory;
 
-        protected $fillable = [
+    protected $fillable = [
         'register_id',
         'branch_id',
         'user_id',
@@ -33,7 +34,7 @@ class CashRegisterSession extends Model
         'created_at'    => 'datetime',
         'updated_at'    => 'datetime',
     ];
-        /**
+    /**
      * Auto-assign opened_at, user_id, and expected_cash when opening shift
      */
     protected static function booted(): void
@@ -58,9 +59,13 @@ class CashRegisterSession extends Model
     {
         return $this->belongsTo(Branch::class);
     }
-    
+
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+    public function transactions(): HasMany
+    {
+        return $this->hasMany(CashTransaction::class, 'session_id');
     }
 }

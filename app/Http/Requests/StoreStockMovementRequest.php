@@ -22,7 +22,7 @@ class StoreStockMovementRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'product_id'    => ['required', 'integer', 'exists:products,id'],
+            'product_id'    => ['nullable', 'integer', 'exists:products,id'],
             'variant_id'    => ['nullable', 'integer', 'exists:product_variants,id'],
             'warehouse_id'  => ['nullable', 'integer', 'exists:warehouses,id'],
             'movement_date' => ['nullable', 'date'],
@@ -37,5 +37,15 @@ class StoreStockMovementRequest extends FormRequest
             'reference'     => ['nullable', 'string', 'max:100'],
             'note'          => ['nullable', 'string'],
         ];
+    }
+
+    public function withValidator(\Illuminate\Validation\Validator $validator): void
+    {
+        $validator->after(function ($validator) {
+            $data = $this->all();
+            if (empty($data['product_id']) && empty($data['variant_id'])) {
+                $validator->errors()->add('product_id', 'Either product_id or variant_id is required.');
+            }
+        });
     }
 }

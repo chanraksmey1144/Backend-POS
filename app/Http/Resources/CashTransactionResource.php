@@ -5,7 +5,7 @@ namespace App\Http\Resources;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
-class CustomerGroupResource extends JsonResource
+class CashTransactionResource extends JsonResource
 {
     /**
      * Transform the resource into an array.
@@ -16,10 +16,13 @@ class CustomerGroupResource extends JsonResource
     {
         return [
             'id'               => $this->id,
-            'name'             => $this->name,
-            'discount_percent' => (float) $this->discount_percent,
+            'session_id'       => $this->session_id,
+            'transaction_type' => $this->transaction_type, // 'cash_in' | 'cash_out'
+            'amount'           => (float) $this->amount,
+            'description'      => $this->description,
+            'user_id'          => $this->user_id,
+            'cashier'          => new UserResource($this->whenLoaded('user')),
             'created_at'       => $this->created_at?->toIso8601String(),
-            'updated_at'       => $this->updated_at?->toIso8601String(),
         ];
     }
 }

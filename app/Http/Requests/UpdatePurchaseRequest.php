@@ -37,7 +37,7 @@ class UpdatePurchaseRequest extends FormRequest
             'branch_id'      => ['nullable', 'integer', 'exists:branches,id'],
             'warehouse_id'   => ['nullable', 'integer', 'exists:warehouses,id'],
             'order_date'     => ['sometimes', 'date'],
-            'expected_date'  => ['nullable', 'date'],
+            'expected_date'  => ['nullable', 'date', 'after_or_equal:order_date'],
             'received_at'    => ['nullable', 'date'],
             'subtotal'       => ['sometimes', 'numeric', 'min:0'],
             'discount'       => ['sometimes', 'numeric', 'min:0'],
@@ -55,6 +55,14 @@ class UpdatePurchaseRequest extends FormRequest
                 'in:paid,partial,unpaid,refunded',
             ],
             'notes'          => ['nullable', 'string'],
+            'items'                     => ['sometimes', 'array'],
+            'items.*.product_id'        => ['nullable', 'integer', 'exists:products,id'],
+            'items.*.variant_id'        => ['nullable', 'integer', 'exists:product_variants,id'],
+            'items.*.name'              => ['nullable', 'string', 'max:255'],
+            'items.*.sku'               => ['nullable', 'string', 'max:50'],
+            'items.*.cost'              => ['nullable', 'numeric', 'min:0'],
+            'items.*.quantity'          => ['nullable', 'numeric', 'min:0.001'],
+            'items.*.received_quantity' => ['nullable', 'numeric', 'min:0'],
         ];
     }
 }

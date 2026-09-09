@@ -27,6 +27,13 @@ class HeldSaleController extends Controller
         if ($request->filled('search')) {
             $query->where('hold_number', 'like', "%{$request->query('search')}%");
         }
+        // Date range filter
+        if ($request->filled('from_date')) {
+            $query->whereDate('created_at', '>=', $request->query('from_date'));
+        }
+        if ($request->filled('to_date')) {
+            $query->whereDate('created_at', '<=', $request->query('to_date'));
+        }
         $heldSales = $query->latest('created_at')->paginate($request->integer('per_page', 15));
         return HeldSaleResource::collection($heldSales);
     }
@@ -35,7 +42,9 @@ class HeldSaleController extends Controller
      */
     public function store(StoreHeldSaleRequest $request): JsonResponse
     {
-        $heldSale = HeldSale::create($request->validated());
+        $data = $request->validated();
+        $data['created_at'] = $data['created_at'] ?? now();
+        $heldSale = HeldSale::create($data);
         $heldSale->load(['customer', 'cashier']);
         return (new HeldSaleResource($heldSale))
             ->response()

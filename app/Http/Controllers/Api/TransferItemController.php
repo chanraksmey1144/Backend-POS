@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreTransferItemRequest;
 use App\Http\Requests\UpdateTransferItemRequest;
 use App\Http\Resources\TransferItemResource;
+use App\Models\StockTransfer;
 use App\Models\TransferItem;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -32,6 +33,7 @@ class TransferItemController extends Controller
     public function store(StoreTransferItemRequest $request): JsonResponse
     {
         $item = TransferItem::create($request->validated());
+        $this->refreshItemCount($item->transfer_id);
         $item->load(['product', 'variant']);
         return (new TransferItemResource($item))
             ->response()
@@ -59,9 +61,21 @@ class TransferItemController extends Controller
      */
     public function destroy(TransferItem $transferItem): JsonResponse
     {
+        $transferId = $transferItem->transfer_id;
         $transferItem->delete();
+        $this->refreshItemCount($transferId);
         return response()->json([
             'message' => 'Transfer item deleted successfully.',
         ], 200);
+    }
+
+    /**
+     * Keep StockTransfer.item_count in sync after adding / removing items.
+     */
+    private function refreshItemCount(int $transferId): void
+    {
+        StockTransfer::whereKey($transferId)?->update([
+            'item_count' => TransferItem::where('transfer_id', $transferId)->count(),
+        ]);
     }
 }

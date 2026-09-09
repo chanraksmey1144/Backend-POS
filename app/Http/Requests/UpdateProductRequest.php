@@ -58,4 +58,15 @@ class UpdateProductRequest extends FormRequest
             'status'          => ['sometimes', 'required', 'string', 'in:active,archived,draft'],
         ];
     }
+
+    public function withValidator(\Illuminate\Validation\Validator $validator): void
+    {
+        $validator->after(function ($validator) {
+            $min = $this->input('min_stock');
+            $max = $this->input('max_stock');
+            if (is_numeric($min) && is_numeric($max) && (float) $max < (float) $min) {
+                $validator->errors()->add('max_stock', 'The max_stock must be greater than or equal to min_stock.');
+            }
+        });
+    }
 }

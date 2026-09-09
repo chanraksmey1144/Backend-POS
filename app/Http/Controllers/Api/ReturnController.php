@@ -10,6 +10,7 @@ use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\ReturnItem;
 use App\Models\SaleReturn;
+use App\Models\StockMovement;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -17,7 +18,7 @@ use Illuminate\Support\Facades\DB;
 
 class ReturnController extends Controller
 {
-   /**
+    /**
      * Display a listing of returns with filters.
      */
     public function index(Request $request): AnonymousResourceCollection
@@ -34,6 +35,13 @@ class ReturnController extends Controller
         // Filter by cashier
         if ($request->filled('cashier_id')) {
             $query->where('cashier_id', $request->query('cashier_id'));
+        }
+        // Date range filter
+        if ($request->filled('from_date')) {
+            $query->whereDate('created_at', '>=', $request->query('from_date'));
+        }
+        if ($request->filled('to_date')) {
+            $query->whereDate('created_at', '<=', $request->query('to_date'));
         }
         // Search by reason
         if ($request->filled('search')) {
@@ -67,11 +75,21 @@ class ReturnController extends Controller
                 ReturnItem::create($item);
 
                 if (!empty($item['variant_id'])) {
-                    ProductVariant::whereKey($item['variant_id'])->increment('stock', $item['quantity']);
+                    ProductVariant::whereKey($item['variant_id'])->lockForUpdate()->increment('stock', $item['quantity']);
+                } elseif (!empty($item['product_id'])) {
+                    Product::whereKey($item['product_id'])->lockForUpdate()->increment('stock', $item['quantity']);
                 }
-                if (!empty($item['product_id'])) {
-                    Product::whereKey($item['product_id'])->increment('stock', $item['quantity']);
-                }
+
+                StockMovement::create([
+                    'product_id'    => $item['product_id'] ?? null,
+                    'variant_id'    => $item['variant_id'] ?? null,
+                    'user_id'       => $data['cashier_id'] ?? auth()->id(),
+                    'movement_date' => now(),
+                    'type'          => 'return',
+                    'quantity'      => (float) $item['quantity'],
+                    'reference'     => $data['sale_id'] ?? null,
+                    'note'          => 'Customer return / refund.',
+                ]);
             }
 
             return $saleReturn;
@@ -100,11 +118,21 @@ class ReturnController extends Controller
         return new SaleReturnResource($return);
     }
     /**
-     * Remove the specified return record.
+     * Remove the specified return record (reverses the stock it added back).
      */
     public function destroy(SaleReturn $return): JsonResponse
     {
-        $return->delete();
+        DB::transaction(function () use ($return) {
+            foreach ($return->items as $item) {
+                if ($item->variant_id) {
+                    ProductVariant::whereKey($item->variant_id)->lockForUpdate()->decrement('stock', $item->quantity);
+                } elseif ($item->product_id) {
+                    Product::whereKey($item->product_id)->lockForUpdate()->decrement('stock', $item->quantity);
+                }
+            }
+            $return->delete();
+        });
+
         return response()->json([
             'message' => 'Return record deleted successfully.',
         ], 200);

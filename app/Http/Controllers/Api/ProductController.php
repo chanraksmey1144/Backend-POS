@@ -18,7 +18,7 @@ class ProductController extends Controller
      */
     public function index(Request $request): AnonymousResourceCollection
     {
-        $query = Product::with(['category', 'brand', 'unit']);
+        $query = Product::with(['category', 'brand', 'unit', 'variants']);
         // Filter by category
         if ($request->filled('category_id')) {
             $query->where('category_id', $request->query('category_id'));
@@ -87,3 +87,4 @@ class ProductController extends Controller
         ], 200);
     }
 }
+

@@ -45,6 +45,14 @@ class StorePurchaseRequest extends FormRequest
             ],
             'notes'           => ['nullable', 'string'],
             'created_by'      => ['nullable', 'integer', 'exists:users,id'],
+            'items'                     => ['sometimes', 'array'],
+            'items.*.product_id'        => ['nullable', 'integer', 'exists:products,id'],
+            'items.*.variant_id'        => ['nullable', 'integer', 'exists:product_variants,id'],
+            'items.*.name'              => ['required_with:items', 'string', 'max:255'],
+            'items.*.sku'               => ['nullable', 'string', 'max:50'],
+            'items.*.cost'              => ['required_with:items', 'numeric', 'min:0'],
+            'items.*.quantity'          => ['required_with:items', 'numeric', 'min:0.001'],
+            'items.*.received_quantity' => ['nullable', 'numeric', 'min:0'],
         ];
     }
 }

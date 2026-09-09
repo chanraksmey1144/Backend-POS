@@ -48,6 +48,10 @@ class UpdateStockTransferRequest extends FormRequest
                 'in:draft,requested,approved,in_transit,received,cancelled',
             ],
                         'notes'      => ['nullable', 'string'],
+            'items'      => ['sometimes', 'array'],
+            'items.*.product_id' => ['nullable', 'integer', 'exists:products,id'],
+            'items.*.variant_id' => ['nullable', 'integer', 'exists:product_variants,id'],
+            'items.*.quantity'   => ['nullable', 'numeric', 'min:0.001'],
         ];
     }
 }

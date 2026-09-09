@@ -30,9 +30,17 @@ class StoreHeldSaleRequest extends FormRequest
             'total'        => ['required', 'numeric', 'min:0'],
             'items_json'   => ['required', 'array'],
             'items_json.*.product_id' => ['nullable', 'integer'],
+            'items_json.*.variant_id' => ['nullable', 'integer'],
             'items_json.*.name'       => ['required', 'string'],
+            'items_json.*.sku'        => ['nullable', 'string', 'max:50'],
+            'items_json.*.barcode'    => ['nullable', 'string', 'max:100'],
             'items_json.*.price'      => ['required', 'numeric', 'min:0'],
+            'items_json.*.cost'       => ['nullable', 'numeric', 'min:0'],
             'items_json.*.quantity'   => ['required', 'numeric', 'min:0.001'],
+            'items_json.*.discount'   => ['nullable', 'numeric', 'min:0'],
+            'items_json.*.tax'        => ['nullable', 'numeric', 'min:0'],
+            'items_json.*.stock'      => ['nullable', 'numeric'],
+            'items_json.*.image'      => ['nullable', 'string', 'max:255'],
         ];
     }
 }

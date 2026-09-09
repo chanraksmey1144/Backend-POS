@@ -60,6 +60,7 @@ class UpdateSaleRequest extends FormRequest
                 'in:paid,partial,unpaid,refunded',
             ],
             'notes'          => ['nullable', 'string'],
+            'created_by'     => ['nullable', 'integer', 'exists:users,id'],
         ];
     }
 }

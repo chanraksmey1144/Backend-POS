@@ -10,6 +10,7 @@ use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\Sale;
 use App\Models\SaleItem;
+use App\Models\StockMovement;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -73,6 +74,7 @@ class SaleController extends Controller
             if (!isset($data['change']) && isset($data['paid'], $data['total'])) {
                 $data['change'] = max(0, $data['paid'] - $data['total']);
             }
+            $data['created_by'] = $data['created_by'] ?? $request->user()?->id;
 
             $items = $data['items'] ?? [];
             unset($data['items']);
@@ -81,16 +83,16 @@ class SaleController extends Controller
                 $sale = Sale::create($data);
 
                 foreach ($items as $item) {
-                    $item['sale_id']   = $sale->id;
+                    $item['sale_id']    = $sale->id;
                     $item['created_at'] = now();
-                    SaleItem::create($item);
 
-                    if (!empty($item['variant_id'])) {
-                        ProductVariant::whereKey($item['variant_id'])->decrement('stock', $item['quantity']);
-                    }
-                    if (!empty($item['product_id'])) {
-                        Product::whereKey($item['product_id'])->decrement('stock', $item['quantity']);
-                    }
+                    $target = $this->resolveStockTarget($item);
+                    $this->assertSufficientStock($target, $item['quantity']);
+
+                    SaleItem::create($item);
+                    $this->adjustStock($target, $item['quantity'], -1);
+
+                    $this->recordMovement($sale, $item, $target);
                 }
 
                 return $sale;
@@ -103,9 +105,9 @@ class SaleController extends Controller
                 'data'    => new SaleResource($sale),
             ], 201);
         } catch (Throwable $e) {
+            report($e);
             return response()->json([
                 'message' => 'Failed to create sale transaction.',
-                'error'   => $e->getMessage(),
             ], 500);
         }
     }
@@ -118,11 +120,34 @@ class SaleController extends Controller
         return new SaleResource($sale);
     }
     /**
-     * Update the specified sale.
+     * Update the specified sale. Restores / re-applies stock when the
+     * status moves between completed and cancelled/refunded.
      */
     public function update(UpdateSaleRequest $request, Sale $sale): SaleResource
     {
-        $sale->update($request->validated());
+        DB::transaction(function () use ($request, $sale) {
+            $data = $request->validated();
+            $previousStatus = $sale->status;
+            $sale->update($data);
+
+            $nowStatus = $sale->status;
+            if ($previousStatus === $nowStatus) {
+                return;
+            }
+
+            $closed  = in_array($nowStatus, ['cancelled', 'refunded'], true);
+            $reopened = in_array($previousStatus, ['cancelled', 'refunded'], true);
+
+            if ($closed && in_array($previousStatus, ['completed', 'pending', 'hold'], true)) {
+                $this->restoreStock($sale);
+            } elseif ($reopened && in_array($nowStatus, ['completed', 'pending', 'hold'], true)) {
+                foreach ($sale->items as $item) {
+                    $target = $this->resolveStockTarget($item->toArray());
+                    $this->adjustStock($target, $item->quantity, -1);
+                }
+            }
+        });
+
         $sale->load(['customer', 'cashier', 'branch', 'register', 'items']);
         return new SaleResource($sale);
     }
@@ -131,9 +156,111 @@ class SaleController extends Controller
      */
     public function destroy(Sale $sale): JsonResponse
     {
-        $sale->delete();
+        DB::transaction(function () use ($sale) {
+            if (in_array($sale->status, ['completed', 'pending', 'hold'], true)) {
+                $this->restoreStock($sale);
+            }
+            $sale->delete();
+        });
+
         return response()->json([
             'message' => 'Sale transaction deleted successfully.',
         ], 200);
+    }
+
+    /**
+     * Resolve the stock owner of a sale item (variant takes precedence).
+     */
+    private function resolveStockTarget(array $item): ?array
+    {
+        if (!empty($item['variant_id'])) {
+            return ['variant', (int) $item['variant_id']];
+        }
+        if (!empty($item['product_id'])) {
+            return ['product', (int) $item['product_id']];
+        }
+
+        return null;
+    }
+
+    /**
+     * Lock the stock row and adjust it by a signed quantity.
+     */
+    private function adjustStock(?array $target, float $quantity, int $sign): void
+    {
+        if ($target === null) {
+            return;
+        }
+
+        [$type, $id] = $target;
+        $model = $type === 'variant'
+            ? ProductVariant::whereKey($id)->lockForUpdate()->first()
+            : Product::whereKey($id)->lockForUpdate()->first();
+
+        if ($model) {
+            $model->update(['stock' => max(0, (float) $model->stock + ($sign * $quantity))]);
+        }
+    }
+
+    /**
+     * Ensure enough stock exists before an outgoing movement.
+     */
+    private function assertSufficientStock(?array $target, float $quantity): void
+    {
+        if ($target === null) {
+            return;
+        }
+
+        [$type, $id] = $target;
+        $model = $type === 'variant'
+            ? ProductVariant::whereKey($id)->lockForUpdate()->first()
+            : Product::whereKey($id)->lockForUpdate()->first();
+
+        if ($model && (float) $model->stock < $quantity) {
+            abort(422, "Insufficient stock for {$model->name} (available: {$model->stock}).");
+        }
+    }
+
+    /**
+     * Increase stock back on the sale items (cancelled / refunded / deleted).
+     */
+    private function restoreStock(Sale $sale): void
+    {
+        foreach ($sale->items as $item) {
+            $target = $this->resolveStockTarget($item->toArray());
+            $this->adjustStock($target, $item->quantity, 1);
+
+            StockMovement::create([
+                'product_id'    => $item->product_id,
+                'variant_id'    => $item->variant_id,
+                'user_id'       => $sale->cashier_id ?? $sale->created_by,
+                'movement_date' => now(),
+                'type'          => 'return',
+                'quantity'      => $item->quantity,
+                'reference'     => $sale->invoice_number,
+                'note'          => 'Stock restored from cancelled / refunded / deleted sale.',
+            ]);
+        }
+    }
+
+    /**
+     * Record a stock movement for an outgoing sale line.
+     */
+    private function recordMovement(Sale $sale, array $item, ?array $target): void
+    {
+        if ($target === null) {
+            return;
+        }
+
+        StockMovement::create([
+            'product_id'    => $item['product_id'] ?? null,
+            'variant_id'    => $item['variant_id'] ?? null,
+            'user_id'       => $sale->created_by ?? $sale->cashier_id,
+            'movement_date' => $sale->sale_date ?? now(),
+            'type'          => 'sale',
+            'quantity'      => -(float) $item['quantity'],
+            'reference'     => $sale->invoice_number,
+            'note'          => 'Items sold via POS.',
+        ]);
     }
 }

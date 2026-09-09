@@ -2,8 +2,6 @@
 
 namespace App\Http\Resources;
 
-use App\Models\Warehouse;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -27,12 +25,5 @@ class BranchResource extends JsonResource
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];
-    }
-    /**
-     * Get the warehouses for this branch.
-     */
-    public function warehouses(): HasMany
-    {
-        return $this->hasMany(Warehouse::class);
     }
 }
