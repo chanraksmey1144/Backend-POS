@@ -72,7 +72,7 @@ class ReportController extends Controller
             ->values()
             ->all();
 
-        $rows = SaleResource::collection($filtered->take(50));
+        $rows = SaleResource::collection($filtered);
 
         return response()->json([
             'success' => true,
@@ -166,7 +166,7 @@ class ReportController extends Controller
      */
     public function profit(Request $request): JsonResponse
     {
-        $query = Sale::with('items')->where('status', 'completed');
+        $query = Sale::with(['items', 'customer'])->where('status', 'completed');
 
         if ($request->filled('from_date')) {
             $query->whereDate('sale_date', '>=', $request->query('from_date'));
@@ -191,7 +191,41 @@ class ReportController extends Controller
         if ($request->filled('to_date')) {
             $expenseQuery->whereDate('expense_date', '<=', $request->query('to_date'));
         }
-        $expenseTotal = round($expenseQuery->sum('amount'), 2);
+        $expenses = $expenseQuery->orderByDesc('expense_date')->get();
+        $expenseTotal = round($expenses->sum('amount'), 2);
+
+        $salesRows = $sales->map(function (Sale $sale): array {
+            $costOfGoods = round($sale->items->sum(fn ($item) => $item->cost * $item->quantity), 2);
+
+            return [
+                'type' => 'sale',
+                'date' => $sale->sale_date?->toIso8601String(),
+                'reference' => $sale->invoice_number,
+                'description' => $sale->customer?->name,
+                'payment_method' => $sale->payment_method,
+                'revenue' => (float) $sale->total,
+                'cost_of_goods' => $costOfGoods,
+                'expense' => 0.0,
+                'profit' => round($sale->total - $costOfGoods, 2),
+            ];
+        });
+
+        $expenseRows = $expenses->map(fn (Expense $expense): array => [
+            'type' => 'expense',
+            'date' => $expense->expense_date?->toIso8601String(),
+            'reference' => 'EXP-' . $expense->id,
+            'description' => trim(implode(' - ', array_filter([$expense->category, $expense->description]))),
+            'payment_method' => $expense->payment_method,
+            'revenue' => 0.0,
+            'cost_of_goods' => 0.0,
+            'expense' => (float) $expense->amount,
+            'profit' => -((float) $expense->amount),
+        ]);
+
+        $transactions = $salesRows
+            ->concat($expenseRows)
+            ->sortByDesc('date')
+            ->values();
 
         return response()->json([
             'success' => true,
@@ -203,6 +237,7 @@ class ReportController extends Controller
                     'expenses'     => $expenseTotal,
                     'net_profit'   => round($revenue - $cogs - $expenseTotal, 2),
                 ],
+                'transactions' => $transactions,
             ],
         ]);
     }

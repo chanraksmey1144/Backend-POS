@@ -23,6 +23,7 @@ class ProductResource extends JsonResource
             'image'           => [
                 'label' => $this->image_label,
                 'color' => $this->image_color,
+                'url'   => $this->image_url,
             ],
                         'cost'            => (float) $this->cost,
             'price'           => (float) $this->price,

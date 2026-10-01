@@ -4,14 +4,15 @@ A guide for AI agents / developers to quickly understand this project. Read this
 
 ## 1. What this is
 
-A **Laravel 10 REST API backend** for an **Inventory / Point-of-Sale (POS)** system. It exposes a pure JSON API (the only web route is the default Laravel welcome page). The "Object Model" is complete CRUD scaffolding for ~20 business entities (branches, warehouses, products, customers, sales, purchases, returns, roles, users, etc.).
+A **Laravel 10 REST API backend** for an **Inventory / Point-of-Sale (POS)** system, **wired to the sibling `Frontend-POS` React app**. It exposes a pure JSON API protected by **Sanctum bearer tokens**. The "Object Model" is full CRUD scaffolding for ~30 business entities plus auth, dashboard, reports, and settings.
 
 - **Framework:** Laravel 10 (`laravel/framework: ^10.0`, locked v10.50.3)
 - **PHP:** `^8.1`
-- **Auth package:** `laravel/sanctum: ^3.2` — **installed but NOT wired up yet** (see §8)
-- **DB:** MySQL (`Inventory-POS-System`, port `3307` in `.env`)
-- **Frontend build:** Vite (bare scaffold, Axios only; no Vue/React/Tailwind). The real frontend lives in the sibling `Frontend-POS` directory.
+- **Auth:** `laravel/sanctum: ^3.2` — **fully wired** (login/me/logout + `auth:sanctum` middleware on all protected routes; see §8)
+- **DB:** MySQL (`Inventory-POS-System`, port `3307` in `.env`, user `root`, no password)
+- **Frontend client:** the sibling `Frontend-POS` app (`VITE_API_URL=http://localhost:8000/api`). Backend-POS itself contains only the default Vite scaffold (no Vue/React/Tailwind in use).
 - **Tests:** scaffold only (`tests/Unit/ExampleTest.php`, `tests/Feature/ExampleTest.php`). No API tests.
+- **Total surface:** 33 controllers, 53 FormRequests, 28 Resources, 30 models, 33 migrations. 151 `api/*` routes.
 
 ## 2. Directory map (only project-owned code)
 
@@ -19,17 +20,17 @@ A **Laravel 10 REST API backend** for an **Inventory / Point-of-Sale (POS)** sys
 Backend-POS/
 ├── app/
 │   ├── Http/
-│   │   ├── Controllers/Api/     # 20 resource controllers (thin CRUD)
-│   │   ├── Requests/            # 38 FormRequest classes (Store/Update pairs)
-│   │   ├── Resources/           # 19 JsonResource classes
+│   │   ├── Controllers/Api/     # 33 resource + feature controllers (thin CRUD + auth/dashboard/reports/settings)
+│   │   ├── Requests/            # 53 FormRequest classes (Store/Update pairs)
+│   │   ├── Resources/           # 28 JsonResource classes
 │   │   └── Middleware/          # ForceJsonResponse (custom)
-│   ├── Models/                  # Eloquent models
+│   ├── Models/                  # 30 Eloquent models
 │   ├── Providers/               # RouteServiceProvider, AppServiceProvider, etc.
 │   └── Exceptions/Handler.php   # JSON error formatting
 ├── config/                      # Laravel config (cors, sanctum, database, ...)
 ├── database/
-│   ├── migrations/              # 23 files
-│   └── seeders/                 # DatabaseSeeder, RoleSeeder, RolePermissionSeeder
+│   ├── migrations/              # 33 files
+│   └── seeders/                 # DatabaseSeeder + per-domain seeders (roles, permissions, admin, audit logs, ...)
 ├── routes/
 │   ├── api.php                  # ALL real endpoints (see §4)
 │   └── web.php                  # default welcome page only
@@ -37,7 +38,7 @@ Backend-POS/
 └── .env                         # DB name Inventory-POS-System, port 3307 (do NOT commit)
 ```
 
-> `vendor/`, `node_modules/`, `storage/` are dependencies/cache — never touch. There are **no** services, repositories, jobs, listeners, policies, or observers layers; all business logic lives in controllers/models.
+> `vendor/`, `node_modules/`, `storage/` are dependencies/cache — never touch. There are **no** services/repositories/policies layers; business logic lives in controllers/models (with a few DB-transaction workflows in the "smart" controllers listed in §3).
 
 ## 3. Architecture & conventions (agreed patterns)
 
@@ -45,9 +46,19 @@ The codebase is highly repetitive. **The CRUD pattern below is safe to assume fo
 
 ### Controller pattern (`app/Http/Controllers/Api/*Controller.php`)
 - `index(Request $request): AnonymousResourceCollection` — optional query filters via `if ($request->filled('x'))`, then `->paginate($request->integer('per_page', 15))`, `latest()`, wrap in `XResource::collection(...)`.
-- `store(StoreXRequest $request): JsonResponse` — `Model::create($request->validated())`, then return `(new XResource($model))->response()->setStatusCode(201)`. **Exceptions:** `SaleController@store` returns custom `{message, data}` / `{message, error}`; `UserController` maps `password` → `password_hash`.
+- `store(StoreXRequest $request): JsonResponse` — `Model::create($request->validated())`, then return `(new XResource($model))->response()->setStatusCode(201)`.
 - `show` / `update` — return `XResource`; `update(UpdateXRequest $request, Model $model)`.
 - `destroy` — `$model->delete()` → `200 {"message": "... deleted successfully."}`. `RoleController@destroy` returns `403` for `grant_all` (superadmin) roles.
+
+**Not thin CRUD — the "smart" controllers (don't assume plain CRUD here):**
+- `SaleController@store` — transactional: creates the sale, persists `items`, **decrements stock** (asserts sufficiency first), logs `StockMovement`. Returns `{message, data}` / `{message, error}` (custom error shape).
+- `PurchaseController@store/update/destroy` — transactional; `receive()` restocks warehouse products + logs movements; destroy on a received order reverses stock.
+- `ReturnController@store/destroy` — transactional; increments stock back + logs movements; destroy reverses.
+- `StockMovementController@store` — applies the movement to product/variant stock in a transaction and auto-computes `before_stock`/`after_stock`.
+- `CashTransactionController@store/destroy` — updates the parent session's `expected_cash` in a transaction.
+- `CashRegisterSessionController@store/update` — sets `opened_at`/`expected_cash` (model `creating` hook) and computes `difference` + `closed_at` on close.
+- `RolePermissionController@sync` — transactional replace of a role's permission set.
+- `AuthController` + `DashboardController` + `ReportController` + `SettingController` — feature endpoints, not CRUD.
 
 ### Form Requests (`app/Http/Requests/*`)
 - `authorize()` always returns `true` — **no authorization checks anywhere**.
@@ -72,37 +83,27 @@ The codebase is highly repetitive. **The CRUD pattern below is safe to assume fo
 
 ## 4. Routing
 
-All real routes live in `routes/api.php`, applied with the `api` middleware group + `api/` prefix. **No API versioning** (no `/v1`).
+All real routes live in `routes/api.php` under the `api` + `auth:sanctum` middleware group. **No API versioning** (no `/v1`). `POST api/auth/login`, `POST api/auth/forgot-password`, and `POST api/auth/reset-password` are public; everything else requires a Sanctum bearer token. A `fallback` route returns 404 JSON for unknown `/api/*` paths.
 
-- **19 `Route::apiResource(...)` resources** → 5 routes each (`index/show/store/update/destroy`):
+Resource groups (all `Route::apiResource(..., ...)` → index/show/store/update/destroy unless noted):
 
-  | Prefix | Controller |
-  |---|---|
-  | `api/branches` | `Api\BranchController` |
-  | `api/warehouses` | `Api\WarehouseController` |
-  | `api/registers` | `Api\RegisterController` |
-  | `api/roles` | `Api\RoleController` |
-  | `api/users` | `Api\UserController` |
-  | `api/customer-groups` | `Api\CustomerGroupController` |
-  | `api/customers` | `Api\CustomerController` |
-  | `api/categories` | `Api\CategoryController` |
-  | `api/brands` | `Api\BrandController` |
-  | `api/units` | `Api\UnitController` |
-  | `api/products` | `Api\ProductController` |
-  | `api/product-variants` | `Api\ProductVariantController` |
-  | `api/suppliers` | `Api\SupplierController` |
-  | `api/sales` | `Api\SaleController` |
-  | `api/sale-items` | `Api\SaleItemController` |
-  | `api/held-sales` | `Api\HeldSaleController` |
-  | `api/returns` | `Api\ReturnController` |
-  | `api/return-items` | `Api\ReturnItemController` |
-  | `api/purchases` | `Api\PurchaseController` |
+| Group | Resources / controllers |
+|---|---|
+| Auth | `POST auth/login`, `POST auth/forgot-password`, `POST auth/reset-password` (public); `GET auth/me`, `POST auth/logout`, `POST auth/change-password` |
+| Access & users | `branches`, `warehouses`, `registers`, `roles` (with `roles/{role}/permissions` GET+POST/PUT), `users` |
+| Customers & suppliers | `customer-groups`, `customers`, `suppliers` |
+| Catalog & inventory | `categories`, `brands`, `units`, `products`, `product-variants` |
+| Sales & returns | `sales`, `sale-items`, `held-sales`, `returns`, `return-items`, `transfer-items` |
+| Procurement & finance | `purchases`, `purchase-items`, `stock-movements` (**only index/store/show**), `stock-transfers`, `expenses`, `cash-register-sessions`, `cash-transactions` |
+| Notifications | `notifications` (**except update**) + `POST notifications/read-all`, `PATCH notifications/{id}/read` |
+| Audit | `audit-logs` (only index/show/store) |
+| Settings | `GET settings`, `GET settings/{key}`, `POST|PUT settings` |
+| Dashboard & reports | `GET dashboard`, `GET reports/sales|purchases|inventory|profit` |
+| Fallback | `/{fallbackPlaceholder}` → 404 JSON |
 
-- **2 custom routes** (role permissions):
-  - `GET  api/roles/{role}/permissions` → `RolePermissionController@index`
-  - `POST api/roles/{role}/permissions` → `RolePermissionController@sync` (transactional replace)
 - Route model binding used everywhere.
-- **No `auth:sanctum` middleware is applied to any route yet.**
+- **`auth:sanctum` is applied to the whole group** — every endpoint except `auth/login` requires a bearer token (`Authenticate:sanctum` shown on all api routes in `route:list`).
+- Configured CORS: `api/*` + `sanctum/csrf-cookie`, origins `*`, credentials disabled.
 
 ## 5. Domain model at a glance
 
@@ -120,7 +121,7 @@ All real routes live in `routes/api.php`, applied with the `api` middleware grou
 | `Product` | `products` | category/brand/unit_id, sku, barcode, cost, price, wholesale_price, tax_percent, `track_inventory`, min/max_stock, stock | |
 | `ProductVariant` | `product_variants` | product_id, sku, barcode, cost, price, stock | |
 | `Supplier` | `suppliers` | contact_person, tax_number, total_purchases, outstanding | |
-| `Sale` | `sales` | invoice_number, customer_id, cashier_id, branch_id, register_id, subtotal/discount/tax/total/paid/change, payment_method, status, payment_status | `creating` hook auto-generates `INV-YYYYMMDD-0001`; NOT applied in any controller though — see "Known gaps" §9 |
+| `Sale` | `sales` | invoice_number, customer_id, cashier_id, branch_id, register_id, subtotal/discount/tax/total/paid/change, payment_method, status, payment_status | `creating` hook auto-generates `INV-YYYYMMDD-0001`; store decrements stock + logs movements |
 | `SaleItem` | `sale_items` | sale_id, product/variant_id, name, sku, price, cost, quantity, discount, tax; no `updated_at` | accessor `getLineTotalAttribute()` |
 | `HeldSale` | `held_sales` | hold_number, customer/cashier_id, discounts, `items_json` (cast array); no `updated_at` | hook generates `HOLD-###`, controller does NOT persist items anywhere else |
 | `SaleReturn` | `sale_returns` | sale_id, branch_id, cashier_id, reason, refund_amount | ⚠️ route prefix is `returns`, controller `ReturnController` |
@@ -146,55 +147,74 @@ DB quirks to respect:
 | `Supplier` | — | status, `has_outstanding` |
 | `Sale` | customer, cashier, branch, register | branch_id, cashier_id, customer_id, status, payment_status, payment_method, `from_date`/`to_date`, search invoice_number |
 | `SaleItem` / `ReturnItem` | product, variant | parent id; per_page default 50 |
-| `HeldSale` | customer, cashier | cashier_id, search hold_number |
+| `HeldSale` | customer, cashier | cashier_id, search hold_number, from_date/to_date |
 | `Return` | sale, branch, cashier | sale_id, branch_id, cashier_id, search reason |
+| `SaleItem` / `ReturnItem` / `PurchaseItem` / `TransferItem` | product, variant (or related parent) | parent id; per_page default 50 |
+| `Purchase` | supplier, branch, warehouse, items | supplier_id, branch_id, warehouse_id, status, payment_status, from_date/to_date, search purchase_number |
+| `Expense` | branch, creator | branch_id, category, payment_method, from_date/to_date, search |
+| `CashRegisterSession` | register, branch, user | register_id, branch_id, user_id, status |
+| `CashTransaction` | session, user | session_id, transaction_type, from_date/to_date |
+| `StockMovement` | product, variant, warehouse, user | product_id, warehouse_id, type, from_date/to_date, search reference/note |
+| `StockTransfer` | sourceWarehouse, destinationWarehouse, creator, items | source_warehouse_id, destination_warehouse_id, status, from_date/to_date, search transfer_number |
+| `Notification` | — | type |
+| `AuditLog` | user | user_id, action, module, record |
 
 ## 7. Seed data
 
 Run with `php artisan db:seed` (or `php artisan migrate --seed`):
 - `RoleSeeder`: `admin` (grant_all=true), `manager`, `cashier`, `accountant`, `viewer`.
-- `RolePermissionSeeder`: dotted permission strings (`sales.view`, `sales.create`, `products.view`, `inventory.*`, `reports.view`, ...).
-- `DatabaseSeeder`: roles, branch #1, register, cashier user `budi.cashier@pos.com`, VIP customer group, customer, warehouse, category, brand, unit, supplier, one product (Coca-Cola 330ml).
+- `RolePermissionSeeder`: dotted permission strings (`sales.view`, `sales.create`, `products.view`, `inventory.*`, `registers.open`, `registers.close`, `reports.view`, ...).
+- `DatabaseSeeder`: roles, branches, registers, demo users, customers, suppliers, catalog, products + variants, stock, sales/items, purchases, returns, expenses, cash-register sessions + transactions, notifications, audit logs.
+- `AdminUserSeeder`: creates `admin@pos.com / 12345678` (System Administrator).
+- **Demo users** (password **`Password123!`**): `demo@storemaster.com` (Admin, active), `sreyleap@` / `dara@` (cashiers), `bopha@` (manager), `ronan@` (accountant), `kosal@` (viewer, **inactive**). One cash register session is seeded as `open` for register 2.
 
-## 8. Authentication status ⚠️ IMPORTANT
+To wipe and reseed: `php artisan migrate:fresh --seed`.
 
-- **Sanctum is installed but NOT implemented.** There are:
-  - no login/register/logout routes, no `AuthController`, no `createToken()` calls;
-  - no `auth:sanctum` middleware on any route;
-  - `EnsureFrontendRequestsAreStateful` middleware commented out in `app/Http/Kernel.php`.
-- Custom RBAC exists in data (roles + permissions + `Role::hasPermission()`) but is **not enforced** anywhere.
-- **Gotcha:** the `users` table uses `password_hash` (not Laravel's standard `password`) and `User` has **no** `getAuthPassword()` override — standard auth will not work until this is handled.
+## 8. Authentication ⚠️ implemented — know the details
+
+- Sanctum is **fully wired**: login and password recovery/reset routes are public; `auth:sanctum` middleware protects all other API routes.
+- `AuthController@login` validates `email`+`password`, checks `Hash::check` against the `users.password_hash` column, rejects inactive accounts (403), updates `last_login_at`, and issues `$user->createToken('pos-api-token')->plainTextToken`. Response: `{message, access_token, token_type, user}`.
+- `GET auth/me` → `{user: UserResource}`; `POST auth/logout` revokes the current token.
+- `POST auth/change-password` validates `current_password`+`new_password`, checks current password against `password_hash`, updates to new hashed password. Response: `{message, success}`.
+- `POST auth/forgot-password` sends a Laravel password-broker notification and returns a generic response that does not reveal whether the email exists. `POST auth/reset-password` validates the emailed token and confirmed password, updates `password_hash`, and revokes existing Sanctum tokens. Reset links target `FRONTEND_URL`; configure that value and production SMTP/mail delivery for deployment.
+- **Gotcha:** the `users` table uses `password_hash` (not Laravel's default `password`). `User` overrides `getAuthPassword()` to return `password_hash`, the `password_hash` column has a `hashed` cast, and `UserController` maps `password` → `password_hash` on create/update. Match this pattern when touching users.
 - CORS (`config/cors.php`): `api/*` + `sanctum/csrf-cookie`, origins `*`, credentials disabled.
-- Sanctum config: stateful domains include `localhost:3000` (the frontend dev port); token expiry `null` (never).
-- Full-stack flow: the sibling `Frontend-POS` app is the intended API client.
+- Sanctum token expiry: `null` (never). Frontend stores the token in `localStorage`/Zustand and sends `Authorization: Bearer <token>` (`src/lib/api.js` in the frontend handles 401→logout, 403→toast).
+- Custom RBAC exists in data (roles + permissions + `Role::hasPermission()`) but is **not enforced** on API endpoints — authorization is still the frontend's job (UX-only).
+- Full-stack flow: the sibling `Frontend-POS` app is the API client, configured via `VITE_API_URL=http://localhost:8000/api`.
 
 ## 9. Known gaps / inconsistencies (fix with care)
 
-1. **Inventory is never decremented** on sales/returns — `SaleController@store` and `ReturnController@store` do not adjust `product.stock`. Purchases likewise don't touch stock.
-2. **`Sale` / `HeldSale` `creating` hooks** auto-generate `invoice_number`/`hold_number`, but **only `HeldSale` actually persists through a controller that triggers it** — `SaleController@store` uses `Sale::create()` so the hook runs; verify numbers are being generated as expected.
-3. **`User::password_hash` vs `password`** mismatch (§8).
+1. **Inventory IS now updated** on sales (decrement + movement), received purchases (increment + movement), returns (increment + movement), and stock movements (direct apply) — but transfers/stock-transfers and a few edge paths still need verification; don't assume every path adjusts stock correctly.
+2. **`Sale` / `HeldSale` `creating` hooks** auto-generate `invoice_number`/`hold_number`. `HeldSaleController@store` sets `created_at` explicitly (model has `$timestamps = false`); verify numbering and `created_at` are populated as expected for other no-timestamps models.
+3. **`HeldSale` + `CashTransaction` models set `$timestamps = false`** — controllers must set `created_at` themselves (both now do).
 4. **`Role::users()`** is declared as `BelongsTo` but returns many users → relationship bug.
 5. **`ReturnController` ↔ `SaleReturn` model ↔ `SaleReturnResource`** naming mismatch with the `returns` route prefix. `ReturnItem` has `return()` → `SaleReturn`.
 6. **`BranchResource`** contains a leftover `warehouses()` relationship method (dead code).
 7. **`UserFactory`** still uses the standard `password` field, inconsistent with the DB's `password_hash` column.
-8. **No tests** for API behavior; the `web` limiter rate-limit is `ThrottleRequests:api` 60/min per user/IP.
+8. **No tests** for API behavior. Rate limiting is the default `ThrottleRequests:api` 60/min per user/IP.
+9. **No RBAC enforcement server-side** — any authenticated token can hit any endpoint (frontend gates routes by permission only).
+10. **`Register` availability is not enforced on `sales.store`** — a sale can be made against a register that has no open cash session.
 
 ## 10. Common commands
 
 ```bash
 composer install
-npm install && npm run build        # vite build of the bare scaffold
+npm install && npm run build        # vite build of the bare scaffold (frontend build lives in ../Frontend-POS)
 cp .env.example .env                 # then set DB_DATABASE=Inventory-POS-System, DB_PORT=3307
 php artisan key:generate
 php artisan migrate --seed           # MySQL: db Inventory-POS-System, port 3307, user root, empty password
-php artisan serve                    # serves on :8000 by default
-php artisan route:list               # view the 97 api routes
+php artisan serve                    # serves on :8000 by default — the frontend talks to this
+php artisan route:list               # view the 151 api routes
+php artisan db:seed                  # re-seed data only
+php artisan migrate:fresh --seed     # wipe + reseed from scratch
 ```
 
 ## 11. Golden rules for editing this codebase
 
 - Follow the **existing template pattern** (controller → FormRequest → Resource → model) exactly; mirror a sibling file for any new resource.
 - Keep filters/validation consistent (filled() guards, `per_page`, enum `in:` rules, `exists:` FKs).
+- **Frontend contract:** the sibling `Frontend-POS` adapter (in `src/services/api.js`) expects **snake_case request bodies** and **camelCases every response key**, and maps filters via `QUERY_FILTER_MAP`. When you rename an attribute/resource or add query filters, keep them compatible (or update the adapter's `RESOURCE_ALIASES`/`RESPONSE_FIELD_MAP`/`QUERY_FILTER_MAP`).
 - **Never commit `.env`.** Match the sibling `.env.example` if you change config.
 - When adding feature logic (e.g. stock adjustments, auth), prefer the pattern of `RolePermissionController@sync` (transaction, inline validation) and `SaleController@store` (custom response shape) as the closest existing references.
 - If behavior must diverge from the common CRUD template, document it here.

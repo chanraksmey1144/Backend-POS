@@ -47,6 +47,7 @@ class UpdateProductRequest extends FormRequest
                         'description'     => ['nullable', 'string'],
             'image_label'     => ['nullable', 'string', 'max:20'],
             'image_color'     => ['nullable', 'string', 'max:20'],
+                        'image'           => ['sometimes', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
             'cost'            => ['sometimes', 'numeric', 'min:0'],
             'price'           => ['sometimes', 'required', 'numeric', 'min:0'],
             'wholesale_price' => ['sometimes', 'numeric', 'min:0'],

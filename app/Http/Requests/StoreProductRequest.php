@@ -31,6 +31,7 @@ class StoreProductRequest extends FormRequest
             'description'     => ['nullable', 'string'],
             'image_label'     => ['nullable', 'string', 'max:20'],
             'image_color'     => ['nullable', 'string', 'max:20'],
+            'image'           => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
             'cost'            => ['nullable', 'numeric', 'min:0'],
             'price'           => ['required', 'numeric', 'min:0'],
             'wholesale_price' => ['nullable', 'numeric', 'min:0'],

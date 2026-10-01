@@ -21,6 +21,8 @@ class Product extends Model
         'description',
         'image_label',
         'image_color',
+        'image_url',
+        'image_public_id',
         'cost',
         'price',
         'wholesale_price',
